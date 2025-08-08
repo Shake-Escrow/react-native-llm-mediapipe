@@ -1,5 +1,5 @@
 /**
- * Sample React Native App
+ * Sample React Native App with Image Support
  * https://github.com/facebook/react-native
  *
  * @format
@@ -8,6 +8,8 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -19,6 +21,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { launchImageLibrary, MediaType } from 'react-native-image-picker';
 import { colors, styles } from './styles';
 import { type Message } from './types';
 import { useLlmInference } from 'react-native-llm-mediapipe';
@@ -34,51 +37,136 @@ const samplePrompts = [
   'Imagine a world where water is more valuable than gold. Describe a day in the life of a trader dealing in water.',
   'Given that you learned about a new scientific discovery that overturns the previously understood mechanism of muscle growth, explain how this might impact current fitness training regimens.',
   'What are the potential benefits and risks of using AI in recruiting and hiring processes, and how can companies mitigate the risks?',
+  // Image-related prompts
+  'Describe what you see in this image in detail.',
+  'What objects can you identify in this image?',
+  'Analyze the composition and colors in this image.',
+  'What is the mood or atmosphere conveyed by this image?',
+  'Count the number of people/objects you can see in this image.',
 ];
 
 let samplePromptIndex = 0;
+
+interface MessageWithImage extends Message {
+  imageUri?: string;
+}
 
 function App(): React.JSX.Element {
   const textInputRef = React.useRef<TextInput>(null);
   const [prompt, setPrompt] = React.useState('');
   const messagesScrollViewRef = React.useRef<ScrollView>(null);
-  const [messages, setMessages] = React.useState<Message[]>([]);
-  const [partialResponse, setPartialResponse] = React.useState<Message>();
+  const [messages, setMessages] = React.useState<MessageWithImage[]>([]);
+  const [partialResponse, setPartialResponse] = React.useState<MessageWithImage>();
+  const [selectedImage, setSelectedImage] = React.useState<{
+    uri: string;
+    base64: string;
+  } | null>(null);
 
+  // Enable vision modality for multimodal support
   const llmInference = useLlmInference({
     storageType: 'asset',
-    modelName: 'gemma-2b-it-cpu-int4.bin',
-    // 'gemma-1.1-2b-it-gpu-int4.bin' or the name of the model that
-    // you placed at android/app/src/main/assets/{MODEL_FILE}
+    modelName: 'gemma-3n-e2b-it-cpu-int4.bin', // Use Gemma 3n for vision support
+    enableVisionModality: true,
   });
+
+  const selectImage = React.useCallback(() => {
+    const options = {
+      mediaType: 'photo' as MediaType,
+      includeBase64: true,
+      quality: 0.7,
+    };
+
+    launchImageLibrary(options, (response) => {
+      if (response.didCancel || response.errorMessage) {
+        return;
+      }
+
+      const asset = response.assets?.[0];
+      if (asset?.uri && asset?.base64) {
+        setSelectedImage({
+          uri: asset.uri,
+          base64: asset.base64,
+        });
+      }
+    });
+  }, []);
+
+  const clearImage = React.useCallback(() => {
+    setSelectedImage(null);
+  }, []);
 
   const onSendPrompt = React.useCallback(async () => {
     if (prompt.length === 0) {
       return;
     }
-    setMessages((prev) => [...prev, { role: 'user', content: prompt }]);
+
+    const messageContent: MessageWithImage = { 
+      role: 'user', 
+      content: prompt,
+      imageUri: selectedImage?.uri
+    };
+    
+    setMessages((prev) => [...prev, messageContent]);
     setPartialResponse({ role: 'assistant', content: '' });
     setPrompt('');
-    const response = await llmInference.generateResponse(
-      prompt,
-      (partial) => {
-        setPartialResponse((prev) => ({
-          role: 'assistant',
-          content: (prev?.content ?? '') + partial,
-        }));
-      },
-      (error) => {
-        console.error(error);
-        setMessages((prev) => [
-          ...prev,
-          { role: 'error', content: `${error}` },
-        ]);
-        setPartialResponse(undefined);
+
+    try {
+      let response: string;
+      
+      if (selectedImage) {
+        // Generate response with image
+        response = await llmInference.generateResponseWithImage(
+          prompt,
+          selectedImage.base64,
+          (partial) => {
+            setPartialResponse((prev) => ({
+              role: 'assistant',
+              content: (prev?.content ?? '') + partial,
+            }));
+          },
+          (error) => {
+            console.error(error);
+            setMessages((prev) => [
+              ...prev,
+              { role: 'error', content: `${error}` },
+            ]);
+            setPartialResponse(undefined);
+          }
+        );
+        // Clear the selected image after sending
+        setSelectedImage(null);
+      } else {
+        // Generate text-only response
+        response = await llmInference.generateResponse(
+          prompt,
+          (partial) => {
+            setPartialResponse((prev) => ({
+              role: 'assistant',
+              content: (prev?.content ?? '') + partial,
+            }));
+          },
+          (error) => {
+            console.error(error);
+            setMessages((prev) => [
+              ...prev,
+              { role: 'error', content: `${error}` },
+            ]);
+            setPartialResponse(undefined);
+          }
+        );
       }
-    );
-    setPartialResponse(undefined);
-    setMessages((prev) => [...prev, { role: 'assistant', content: response }]);
-  }, [llmInference, prompt]);
+
+      setPartialResponse(undefined);
+      setMessages((prev) => [...prev, { role: 'assistant', content: response }]);
+    } catch (error) {
+      console.error('Error generating response:', error);
+      setMessages((prev) => [
+        ...prev,
+        { role: 'error', content: `Error: ${error}` },
+      ]);
+      setPartialResponse(undefined);
+    }
+  }, [llmInference, prompt, selectedImage]);
 
   const onSamplePrompt = React.useCallback(() => {
     setPrompt(samplePrompts[samplePromptIndex++ % samplePrompts.length] ?? '');
@@ -100,9 +188,9 @@ function App(): React.JSX.Element {
             ref={messagesScrollViewRef}
             style={styles.messagesScrollView}
             contentContainerStyle={styles.messagesContainer}
-            // onContentSizeChange={() =>
-            //   messagesScrollViewRef.current?.scrollToEnd()
-            // }
+            onContentSizeChange={() =>
+              messagesScrollViewRef.current?.scrollToEnd()
+            }
           >
             {messages.map((m, index) => (
               <MessageView message={m} key={index} />
@@ -110,14 +198,36 @@ function App(): React.JSX.Element {
             {partialResponse && <MessageView message={partialResponse} />}
           </ScrollView>
         </TouchableWithoutFeedback>
+
+        {/* Selected Image Preview */}
+        {selectedImage && (
+          <View style={styles.imagePreviewContainer}>
+            <Image 
+              source={{ uri: selectedImage.uri }} 
+              style={styles.imagePreview}
+              resizeMode="contain"
+            />
+            <Pressable onPress={clearImage} style={styles.clearImageButton}>
+              <Text style={styles.clearImageButtonText}>✕</Text>
+            </Pressable>
+          </View>
+        )}
+
         <View style={styles.promptRow}>
           <Pressable
             onPress={onSamplePrompt}
-            // disabled={prompt.length === 0 || partialResponse !== undefined}
             style={styles.samplePromptButton}
           >
             <Text style={styles.samplePromptButtonText}>⚡️</Text>
           </Pressable>
+
+          <Pressable
+            onPress={selectImage}
+            style={styles.imageButton}
+          >
+            <Text style={styles.imageButtonText}>📷</Text>
+          </Pressable>
+
           <TextInput
             ref={textInputRef}
             selectTextOnFocus={true}
@@ -128,9 +238,10 @@ function App(): React.JSX.Element {
             multiline={true}
             style={styles.promptInput}
           />
+          
           <Pressable
             onPress={onSendPrompt}
-            // disabled={prompt.length === 0 || partialResponse !== undefined}
+            disabled={prompt.length === 0 || partialResponse !== undefined}
             style={styles.sendButton}
           >
             {partialResponse !== undefined ? (
@@ -145,9 +256,16 @@ function App(): React.JSX.Element {
   );
 }
 
-const MessageView: React.FC<{ message: Message }> = ({ message }) => {
+const MessageView: React.FC<{ message: MessageWithImage }> = ({ message }) => {
   return (
     <View style={styles.message}>
+      {message.imageUri && (
+        <Image 
+          source={{ uri: message.imageUri }} 
+          style={styles.messageImage}
+          resizeMode="contain"
+        />
+      )}
       <Text style={styles.messageText}>{message.content}</Text>
     </View>
   );

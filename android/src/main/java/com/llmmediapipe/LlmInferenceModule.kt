@@ -65,6 +65,7 @@ class LlmInferenceModule(private val reactContext: ReactApplicationContext) :
     topK: Int,
     temperature: Double,
     randomSeed: Int,
+    enableVisionModality: Boolean,
     promise: Promise
   ) {
     try {
@@ -77,6 +78,7 @@ class LlmInferenceModule(private val reactContext: ReactApplicationContext) :
           topK,
           temperature.toFloat(),
           randomSeed,
+          enableVisionModality,
           inferenceListener = InferenceModelListener(this, modelHandle)
         )
       modelMap[modelHandle] = model
@@ -93,6 +95,7 @@ class LlmInferenceModule(private val reactContext: ReactApplicationContext) :
     topK: Int,
     temperature: Double,
     randomSeed: Int,
+    enableVisionModality: Boolean,
     promise: Promise
   ) {
     try {
@@ -107,6 +110,7 @@ class LlmInferenceModule(private val reactContext: ReactApplicationContext) :
           topK,
           temperature.toFloat(),
           randomSeed,
+          enableVisionModality,
           inferenceListener = InferenceModelListener(this, modelHandle)
         )
       modelMap[modelHandle] = model
@@ -118,13 +122,22 @@ class LlmInferenceModule(private val reactContext: ReactApplicationContext) :
 
   @ReactMethod
   fun releaseModel(handle: Int, promise: Promise) {
-    modelMap.remove(handle)?.let { promise.resolve(true) }
-      ?: promise.reject("INVALID_HANDLE", "No model found for handle $handle")
+    modelMap[handle]?.let { 
+      it.close() // Clean up any open sessions
+      modelMap.remove(handle)
+      promise.resolve(true) 
+    } ?: promise.reject("INVALID_HANDLE", "No model found for handle $handle")
   }
 
   @ReactMethod
   fun generateResponse(handle: Int, requestId: Int, prompt: String, promise: Promise) {
     modelMap[handle]?.let { it.generateResponseAsync(requestId, prompt, promise) }
+      ?: promise.reject("INVALID_HANDLE", "No model found for handle $handle")
+  }
+
+  @ReactMethod
+  fun generateResponseWithImage(handle: Int, requestId: Int, prompt: String, imageBase64: String?, promise: Promise) {
+    modelMap[handle]?.let { it.generateResponseWithImageAsync(requestId, prompt, imageBase64, promise) }
       ?: promise.reject("INVALID_HANDLE", "No model found for handle $handle")
   }
 
@@ -161,7 +174,6 @@ class LlmInferenceModule(private val reactContext: ReactApplicationContext) :
 
     return outputFile
   }
-
 
   private fun emitEvent(eventName: String, eventData: WritableMap) {
     reactContext

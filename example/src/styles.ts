@@ -55,6 +55,12 @@ export const styles = StyleSheet.create({
     borderRadius: 12,
   },
   messageText: { ...typogs.message, color: colors.white },
+  messageImage: {
+    width: '100%',
+    height: 150,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
   promptInput: {
     ...typogs.body1,
     flex: 1,
@@ -68,14 +74,61 @@ export const styles = StyleSheet.create({
     paddingBottom: 10,
     paddingHorizontal: 12,
   },
-  samplePromptButton: { marginLeft: 12, paddingHorizontal: 16 },
+  samplePromptButton: { 
+    marginLeft: 12, 
+    paddingHorizontal: 16 
+  },
   samplePromptButtonText: {
     ...typogs.button,
     color: colors.white,
   },
-  sendButton: { marginLeft: 12 },
+  imageButton: {
+    marginLeft: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+  },
+  imageButtonText: {
+    ...typogs.button,
+    color: colors.white,
+  },
+  sendButton: { 
+    marginLeft: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
   sendButtonText: {
     ...typogs.button,
     color: colors.white,
+  },
+  imagePreviewContainer: {
+    position: 'relative',
+    marginHorizontal: 12,
+    marginBottom: 8,
+    backgroundColor: colors.dark,
+    borderRadius: 8,
+    padding: 8,
+  },
+  imagePreview: {
+    width: '100%',
+    height: 120,
+    borderRadius: 8,
+  },
+  clearImageButton: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: colors.darker,
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearImageButtonText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });

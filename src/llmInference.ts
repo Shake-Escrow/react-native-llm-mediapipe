@@ -11,20 +11,28 @@ interface LlmInference {
     maxTokens: number,
     topK: number,
     temperature: number,
-    randomSeed: number
+    randomSeed: number,
+    enableVisionModality: boolean
   ) => Promise<number>;
   createModelFromAsset: (
     modelName: string,
     maxTokens: number,
     topK: number,
     temperature: number,
-    randomSeed: number
+    randomSeed: number,
+    enableVisionModality: boolean
   ) => Promise<number>;
   releaseModel: (handle: number) => Promise<boolean>;
   generateResponse: (
     handle: number,
     requestId: number,
     prompt: string
+  ) => Promise<string>;
+  generateResponseWithImage: (
+    handle: number,
+    requestId: number,
+    prompt: string,
+    imageBase64: string | null
   ) => Promise<string>;
 }
 
@@ -61,6 +69,7 @@ export type LlmInferenceConfig = LlmModelLocation & {
   topK?: number;
   temperature?: number;
   randomSeed?: number;
+  enableVisionModality?: boolean;
 };
 
 function getConfigStorageKey(config: LlmInferenceConfig): string {
@@ -89,14 +98,16 @@ export function useLlmInference(config: LlmInferenceConfig) {
             config.maxTokens ?? 512,
             config.topK ?? 40,
             config.temperature ?? 0.8,
-            config.randomSeed ?? 0
+            config.randomSeed ?? 0,
+            config.enableVisionModality ?? false
           )
         : getLlmInference().createModel(
             configStorageKey,
             config.maxTokens ?? 512,
             config.topK ?? 40,
             config.temperature ?? 0.8,
-            config.randomSeed ?? 0
+            config.randomSeed ?? 0,
+            config.enableVisionModality ?? false
           );
 
     modelCreatePromise
@@ -127,6 +138,7 @@ export function useLlmInference(config: LlmInferenceConfig) {
     config.randomSeed,
     config.temperature,
     config.topK,
+    config.enableVisionModality,
     configStorageKey,
   ]);
 
@@ -146,9 +158,6 @@ export function useLlmInference(config: LlmInferenceConfig) {
       const partialSub = eventEmitter.addListener(
         'onPartialResponse',
         (ev: { handle: number; requestId: number; response: string }) => {
-          // console.log(
-          //   `[${ev.handle}] partial response ${ev.requestId}: ${ev.partial}`
-          // );
           console.log(JSON.stringify(ev));
           if (
             onPartial &&
@@ -191,23 +200,70 @@ export function useLlmInference(config: LlmInferenceConfig) {
     [modelHandle]
   );
 
+  const generateResponseWithImage = React.useCallback(
+    async (
+      prompt: string,
+      imageBase64: string,
+      onPartial?: (partial: string, requestId: number | undefined) => void,
+      onError?: (message: string, requestId: number | undefined) => void,
+      abortSignal?: AbortSignal
+    ): Promise<string> => {
+      if (modelHandle === undefined) {
+        throw new Error('Model handle is not defined');
+      }
+      const requestId = nextRequestIdRef.current++;
+      const partialSub = eventEmitter.addListener(
+        'onPartialResponse',
+        (ev: { handle: number; requestId: number; response: string }) => {
+          console.log(JSON.stringify(ev));
+          if (
+            onPartial &&
+            requestId === ev.requestId &&
+            !(abortSignal?.aborted ?? false)
+          ) {
+            onPartial(ev.response, ev.requestId);
+          }
+        }
+      );
+      const errorSub = eventEmitter.addListener(
+        'onErrorResponse',
+        (ev: { handle: number; requestId: number; error: string }) => {
+          console.log(`[${ev.handle}] error ${ev.requestId}: ${ev.error}`);
+          if (
+            onError &&
+            requestId === ev.requestId &&
+            !(abortSignal?.aborted ?? false)
+          ) {
+            onError(ev.error, ev.requestId);
+          }
+        }
+      );
+
+      try {
+        return await getLlmInference().generateResponseWithImage(
+          modelHandle,
+          requestId,
+          prompt,
+          imageBase64
+        );
+      } catch (e) {
+        console.error(e);
+        throw e;
+      } finally {
+        console.log('finally: removing listeners');
+        partialSub.remove();
+        errorSub.remove();
+      }
+    },
+    [modelHandle]
+  );
+
   return React.useMemo(
-    () => ({ generateResponse, isLoaded: modelHandle !== undefined }),
-    [generateResponse, modelHandle]
+    () => ({ 
+      generateResponse, 
+      generateResponseWithImage,
+      isLoaded: modelHandle !== undefined 
+    }),
+    [generateResponse, generateResponseWithImage, modelHandle]
   );
 }
-
-// class InferenceError extends Error {
-//   code: string;
-
-//   constructor(message: string, code: string) {
-//     super(message); // Pass the message to the Error constructor
-//     this.code = code; // Initialize the custom code property
-//     this.name = "InferenceError"; // Set the error name as the class name
-
-//     // Maintaining proper stack trace for where the error was thrown (only available on V8)
-//     if (Error.captureStackTrace) {
-//       Error.captureStackTrace(this, InferenceError);
-//     }
-//   }
-// }

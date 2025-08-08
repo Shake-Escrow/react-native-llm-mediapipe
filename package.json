@@ -45,14 +45,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cdiddy77/react-native-llm-mediapipe.git"
+    "url": "git+https://github.com/Shake-Escrow/react-native-llm-mediapipe.git"
   },
   "author": "Charles Parker <charles@parkerfolk.net> (https://github.com/cdiddy77)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/cdiddy77/react-native-llm-mediapipe/issues"
+    "url": "https://github.com/Shake-Escrow/react-native-llm-mediapipe/issues"
   },
-  "homepage": "https://github.com/cdiddy77/react-native-llm-mediapipe#readme",
+  "homepage": "https://github.com/Shake-Escrow/react-native-llm-mediapipe#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
