@@ -90,6 +90,11 @@ dependencies {
   //noinspection GradleDynamicVersion
   implementation "com.facebook.react:react-native:+"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+  
+  // MediaPipe dependencies - Add both framework and tasks-genai
+  implementation "com.google.mediapipe:framework:latest.release"
   implementation "com.google.mediapipe:tasks-genai:0.10.24"
+  
+  // Alternative: You might need to use a specific stable version
+  // implementation "com.google.mediapipe:framework:0.10.24"
 }
-

@@ -9,7 +9,7 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
-import com.google.mediapipe.tasks.core.GraphOptions
+import com.google.mediapipe.tasks.core.BaseOptions
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -41,7 +41,6 @@ class LlmInferenceModel(
         val optionsBuilder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(modelPath)
                 .setMaxTokens(maxTokens)
-                .setTopK(topK)
                 .setTemperature(temperature)
                 .setRandomSeed(randomSeed)
 
@@ -49,8 +48,25 @@ class LlmInferenceModel(
             optionsBuilder.setMaxNumImages(1)
         }
 
-        val options = optionsBuilder.build()
+        // Set up result and error listeners at the LlmInference level
+        optionsBuilder.setResultListener { partialResult: String, done: Boolean ->
+            inferenceListener?.onResults(this, requestId, partialResult)
+            requestResult += partialResult
+            if (done) {
+                requestPromise?.resolve(requestResult)
+                currentSession?.close()
+                currentSession = null
+            }
+        }
 
+        optionsBuilder.setErrorListener { error: RuntimeException ->
+            inferenceListener?.onError(this, requestId, error.message ?: "")
+            requestPromise?.reject("INFERENCE_ERROR", error.message ?: "Unknown error")
+            currentSession?.close()
+            currentSession = null
+        }
+
+        val options = optionsBuilder.build()
         llmInference = LlmInference.createFromOptions(context, options)
     }
 
@@ -69,37 +85,20 @@ class LlmInferenceModel(
 
             // Create session options
             val sessionOptionsBuilder = LlmInferenceSession.LlmInferenceSessionOptions.builder()
-                    .setTopK(topK)
                     .setTemperature(temperature)
 
             if (enableVisionModality) {
-                sessionOptionsBuilder.setGraphOptions(
-                    GraphOptions.builder().setEnableVisionModality(true).build()
-                )
+                // Use BaseOptions for enabling vision modality
+                val baseOptions = BaseOptions.builder()
+                    .setEnableVisionModality(true)
+                    .build()
+                sessionOptionsBuilder.setBaseOptions(baseOptions)
             }
 
             val sessionOptions = sessionOptionsBuilder.build()
 
             // Create new session
             currentSession = LlmInferenceSession.createFromOptions(llmInference, sessionOptions)
-
-            // Set up result listener for the session
-            currentSession?.setResultListener { partialResult, done ->
-                inferenceListener?.onResults(this, requestId, partialResult)
-                requestResult += partialResult
-                if (done) {
-                    requestPromise?.resolve(requestResult)
-                    currentSession?.close()
-                    currentSession = null
-                }
-            }
-
-            currentSession?.setErrorListener { ex ->
-                inferenceListener?.onError(this, requestId, ex.message ?: "")
-                requestPromise?.reject("INFERENCE_ERROR", ex.message ?: "Unknown error")
-                currentSession?.close()
-                currentSession = null
-            }
 
             // Add text prompt
             currentSession?.addQueryChunk(prompt)
