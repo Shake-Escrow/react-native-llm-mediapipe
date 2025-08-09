@@ -82,6 +82,7 @@ function getConfigStorageKey(config: LlmInferenceConfig): string {
 export function useLlmInference(config: LlmInferenceConfig) {
   const [modelHandle, setModelHandle] = React.useState<number | undefined>();
   const configStorageKey = getConfigStorageKey(config);
+  
   React.useEffect(() => {
     // Skip model creation if configStorageKey is empty
     if (configStorageKey.length === 0) {
@@ -90,6 +91,7 @@ export function useLlmInference(config: LlmInferenceConfig) {
       );
       return;
     }
+    
     let newHandle: number | undefined;
     const modelCreatePromise =
       config.storageType === 'asset'
@@ -154,48 +156,50 @@ export function useLlmInference(config: LlmInferenceConfig) {
       if (modelHandle === undefined) {
         throw new Error('Model handle is not defined');
       }
+      
       const requestId = nextRequestIdRef.current++;
-      const partialSub = eventEmitter.addListener(
-        'onPartialResponse',
-        (ev: { handle: number; requestId: number; response: string }) => {
-          console.log(JSON.stringify(ev));
-          if (
-            onPartial &&
-            requestId === ev.requestId &&
-            !(abortSignal?.aborted ?? false)
-          ) {
-            onPartial(ev.response, ev.requestId);
+      let partialSub: any;
+      let errorSub: any;
+      
+      return new Promise((resolve, reject) => {
+        // Set up listeners before making the request
+        partialSub = eventEmitter.addListener(
+          'onPartialResponse',
+          (ev: { handle: number; requestId: number; response: string }) => {
+            if (ev.handle === modelHandle && ev.requestId === requestId && !abortSignal?.aborted) {
+              onPartial?.(ev.response, ev.requestId);
+            }
           }
-        }
-      );
-      const errorSub = eventEmitter.addListener(
-        'onErrorResponse',
-        (ev: { handle: number; requestId: number; error: string }) => {
-          console.log(`[${ev.handle}] error ${ev.requestId}: ${ev.error}`);
-          if (
-            onError &&
-            requestId === ev.requestId &&
-            !(abortSignal?.aborted ?? false)
-          ) {
-            onError(ev.error, ev.requestId);
-          }
-        }
-      );
-
-      try {
-        return await getLlmInference().generateResponse(
-          modelHandle,
-          requestId,
-          prompt
         );
-      } catch (e) {
-        console.error(e);
-        throw e;
-      } finally {
-        console.log('finally: removing listeners');
-        partialSub.remove();
-        errorSub.remove();
-      }
+        
+        errorSub = eventEmitter.addListener(
+          'onErrorResponse',
+          (ev: { handle: number; requestId: number; error: string }) => {
+            if (ev.handle === modelHandle && ev.requestId === requestId && !abortSignal?.aborted) {
+              onError?.(ev.error, ev.requestId);
+              // Don't reject here as the main promise will be rejected by the native module
+            }
+          }
+        );
+
+        // Make the request
+        getLlmInference()
+          .generateResponse(modelHandle, requestId, prompt)
+          .then((result) => {
+            if (!abortSignal?.aborted) {
+              resolve(result);
+            }
+          })
+          .catch((error) => {
+            if (!abortSignal?.aborted) {
+              reject(error);
+            }
+          })
+          .finally(() => {
+            partialSub?.remove();
+            errorSub?.remove();
+          });
+      });
     },
     [modelHandle]
   );
@@ -211,49 +215,50 @@ export function useLlmInference(config: LlmInferenceConfig) {
       if (modelHandle === undefined) {
         throw new Error('Model handle is not defined');
       }
+      
       const requestId = nextRequestIdRef.current++;
-      const partialSub = eventEmitter.addListener(
-        'onPartialResponse',
-        (ev: { handle: number; requestId: number; response: string }) => {
-          console.log(JSON.stringify(ev));
-          if (
-            onPartial &&
-            requestId === ev.requestId &&
-            !(abortSignal?.aborted ?? false)
-          ) {
-            onPartial(ev.response, ev.requestId);
+      let partialSub: any;
+      let errorSub: any;
+      
+      return new Promise((resolve, reject) => {
+        // Set up listeners before making the request
+        partialSub = eventEmitter.addListener(
+          'onPartialResponse',
+          (ev: { handle: number; requestId: number; response: string }) => {
+            if (ev.handle === modelHandle && ev.requestId === requestId && !abortSignal?.aborted) {
+              onPartial?.(ev.response, ev.requestId);
+            }
           }
-        }
-      );
-      const errorSub = eventEmitter.addListener(
-        'onErrorResponse',
-        (ev: { handle: number; requestId: number; error: string }) => {
-          console.log(`[${ev.handle}] error ${ev.requestId}: ${ev.error}`);
-          if (
-            onError &&
-            requestId === ev.requestId &&
-            !(abortSignal?.aborted ?? false)
-          ) {
-            onError(ev.error, ev.requestId);
-          }
-        }
-      );
-
-      try {
-        return await getLlmInference().generateResponseWithImage(
-          modelHandle,
-          requestId,
-          prompt,
-          imageBase64
         );
-      } catch (e) {
-        console.error(e);
-        throw e;
-      } finally {
-        console.log('finally: removing listeners');
-        partialSub.remove();
-        errorSub.remove();
-      }
+        
+        errorSub = eventEmitter.addListener(
+          'onErrorResponse',
+          (ev: { handle: number; requestId: number; error: string }) => {
+            if (ev.handle === modelHandle && ev.requestId === requestId && !abortSignal?.aborted) {
+              onError?.(ev.error, ev.requestId);
+              // Don't reject here as the main promise will be rejected by the native module
+            }
+          }
+        );
+
+        // Make the request - note the parameter order matches Kotlin implementation
+        getLlmInference()
+          .generateResponseWithImage(modelHandle, requestId, prompt, imageBase64)
+          .then((result) => {
+            if (!abortSignal?.aborted) {
+              resolve(result);
+            }
+          })
+          .catch((error) => {
+            if (!abortSignal?.aborted) {
+              reject(error);
+            }
+          })
+          .finally(() => {
+            partialSub?.remove();
+            errorSub?.remove();
+          });
+      });
     },
     [modelHandle]
   );

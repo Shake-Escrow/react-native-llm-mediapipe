@@ -61,6 +61,7 @@ function App(): React.JSX.Element {
     uri: string;
     base64: string;
   } | null>(null);
+  const [isGenerating, setIsGenerating] = React.useState(false);
 
   // Enable vision modality for multimodal support
   const llmInference = useLlmInference({
@@ -96,7 +97,7 @@ function App(): React.JSX.Element {
   }, []);
 
   const onSendPrompt = React.useCallback(async () => {
-    if (prompt.length === 0) {
+    if (prompt.length === 0 || isGenerating) {
       return;
     }
 
@@ -109,6 +110,7 @@ function App(): React.JSX.Element {
     setMessages((prev) => [...prev, messageContent]);
     setPartialResponse({ role: 'assistant', content: '' });
     setPrompt('');
+    setIsGenerating(true);
 
     try {
       let response: string;
@@ -119,18 +121,16 @@ function App(): React.JSX.Element {
           prompt,
           selectedImage.base64,
           (partial) => {
-            setPartialResponse((prev) => ({
-              role: 'assistant',
-              content: (prev?.content ?? '') + partial,
-            }));
+            setPartialResponse({ role: 'assistant', content: partial });
           },
           (error) => {
-            console.error(error);
+            console.error('Error in partial callback:', error);
             setMessages((prev) => [
               ...prev,
-              { role: 'error', content: `${error}` },
+              { role: 'error', content: `Error: ${error}` },
             ]);
             setPartialResponse(undefined);
+            setIsGenerating(false);
           }
         );
         // Clear the selected image after sending
@@ -140,18 +140,16 @@ function App(): React.JSX.Element {
         response = await llmInference.generateResponse(
           prompt,
           (partial) => {
-            setPartialResponse((prev) => ({
-              role: 'assistant',
-              content: (prev?.content ?? '') + partial,
-            }));
+            setPartialResponse({ role: 'assistant', content: partial });
           },
           (error) => {
-            console.error(error);
+            console.error('Error in partial callback:', error);
             setMessages((prev) => [
               ...prev,
-              { role: 'error', content: `${error}` },
+              { role: 'error', content: `Error: ${error}` },
             ]);
             setPartialResponse(undefined);
+            setIsGenerating(false);
           }
         );
       }
@@ -165,13 +163,16 @@ function App(): React.JSX.Element {
         { role: 'error', content: `Error: ${error}` },
       ]);
       setPartialResponse(undefined);
+    } finally {
+      setIsGenerating(false);
     }
-  }, [llmInference, prompt, selectedImage]);
+  }, [llmInference, prompt, selectedImage, isGenerating]);
 
   const onSamplePrompt = React.useCallback(() => {
+    if (isGenerating) return;
     setPrompt(samplePrompts[samplePromptIndex++ % samplePrompts.length] ?? '');
     textInputRef.current?.focus();
-  }, []);
+  }, [isGenerating]);
 
   return (
     <SafeAreaView style={styles.root}>
@@ -217,6 +218,7 @@ function App(): React.JSX.Element {
           <Pressable
             onPress={onSamplePrompt}
             style={styles.samplePromptButton}
+            disabled={isGenerating}
           >
             <Text style={styles.samplePromptButtonText}>⚡️</Text>
           </Pressable>
@@ -224,6 +226,7 @@ function App(): React.JSX.Element {
           <Pressable
             onPress={selectImage}
             style={styles.imageButton}
+            disabled={isGenerating}
           >
             <Text style={styles.imageButtonText}>📷</Text>
           </Pressable>
@@ -237,14 +240,15 @@ function App(): React.JSX.Element {
             placeholderTextColor={colors.light}
             multiline={true}
             style={styles.promptInput}
+            editable={!isGenerating}
           />
           
           <Pressable
             onPress={onSendPrompt}
-            disabled={prompt.length === 0 || partialResponse !== undefined}
+            disabled={prompt.length === 0 || isGenerating}
             style={styles.sendButton}
           >
-            {partialResponse !== undefined ? (
+            {isGenerating ? (
               <ActivityIndicator />
             ) : (
               <Text style={styles.sendButtonText}>Send</Text>

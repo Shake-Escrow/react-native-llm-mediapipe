@@ -10,6 +10,7 @@ import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import com.google.mediapipe.tasks.genai.llminference.GraphOptions
+import com.google.mediapipe.tasks.genai.llminference.ProgressListener
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -41,28 +42,13 @@ class LlmInferenceModel(
         val optionsBuilder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(modelPath)
                 .setMaxTokens(maxTokens)
-                .setResultListener { partialResult, done ->
-                    inferenceListener?.onResults(this, requestId, partialResult)
-                    requestResult += partialResult
-                    if (done) {
-                        requestPromise?.resolve(requestResult)
-                        currentSession?.close()
-                        currentSession = null
-                    }
-                }
-                .setErrorListener { ex ->
-                    inferenceListener?.onError(this, requestId, ex.message ?: "")
-                    requestPromise?.reject("INFERENCE_ERROR", ex.message ?: "Unknown error")
-                    currentSession?.close()
-                    currentSession = null
-                }
+                .setMaxTopK(topK) // Set maxTopK instead of using it in session
 
         if (enableVisionModality) {
             optionsBuilder.setMaxNumImages(1)
         }
 
         val options = optionsBuilder.build()
-
         llmInference = LlmInference.createFromOptions(context, options)
     }
 
@@ -104,8 +90,40 @@ class LlmInferenceModel(
                 currentSession?.addImage(image)
             }
 
-            // Generate response
-            currentSession?.generateResponseAsync()
+            // Create progress listener for partial results
+            val progressListener = ProgressListener<String> { partialResult ->
+                // Accumulate the partial result
+                requestResult += partialResult
+                // Send the accumulated result to the listener
+                inferenceListener?.onResults(this, requestId, requestResult)
+            }
+
+            // Generate response with progress listener
+            val future = currentSession?.generateResponseAsync(progressListener)
+            
+            // Handle the future result
+            future?.let { responseFuture ->
+                // Use a separate thread to handle the future completion
+                Thread {
+                    try {
+                        val completeResult = responseFuture.get() // This blocks until complete
+                        // Update requestResult to the complete result (in case there's any difference)
+                        requestResult = completeResult
+                        requestPromise?.resolve(completeResult)
+                        currentSession?.close()
+                        currentSession = null
+                    } catch (e: Exception) {
+                        inferenceListener?.onError(this, requestId, e.message ?: "")
+                        requestPromise?.reject("INFERENCE_ERROR", e.message ?: "Unknown error")
+                        currentSession?.close()
+                        currentSession = null
+                    }
+                }.start()
+            } ?: run {
+                // If session is null, reject immediately
+                inferenceListener?.onError(this, requestId, "Failed to create session")
+                requestPromise?.reject("INFERENCE_ERROR", "Failed to create session")
+            }
 
         } catch (e: Exception) {
             inferenceListener?.onError(this, requestId, e.message ?: "")
@@ -177,6 +195,7 @@ class LlmInferenceModel(
     fun close() {
         currentSession?.close()
         currentSession = null
+        llmInference.close()
     }
 }
 
