@@ -86,13 +86,16 @@ export default App;
 
 ### Streaming Text Responses
 
-You can access partial results by supplying a callback to `generateResponse()`:
+You can access partial results by supplying callbacks to `generateResponse()`. Note that partial responses represent the accumulated output from the model:
 
 ```tsx
+const [partialResponse, setPartialResponse] = useState('');
+
 const response = await llmInference.generateResponse(
   prompt,
   (partial) => {
-    setPartialResponse((prev) => prev + partial);
+    // partial contains the accumulated response so far
+    setPartialResponse(partial);
   },
   (error) => {
     console.error('Error:', error);
@@ -114,6 +117,7 @@ const App = () => {
   const [prompt, setPrompt] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
   const [partialResponse, setPartialResponse] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Enable vision modality for multimodal support
   const llmInference = useLlmInference({
@@ -145,23 +149,30 @@ const App = () => {
   }, []);
 
   const handleGenerateWithImage = async () => {
-    if (!selectedImage) return;
+    if (!selectedImage || isGenerating) return;
+
+    setIsGenerating(true);
+    setPartialResponse('');
 
     try {
       const response = await llmInference.generateResponseWithImage(
         prompt,
         selectedImage.base64,
         (partial) => {
-          setPartialResponse((prev) => prev + partial);
+          // partial contains the accumulated response so far
+          setPartialResponse(partial);
         },
         (error) => {
           console.error('Error:', error);
+          setIsGenerating(false);
         }
       );
       
       console.log('Final response:', response);
     } catch (error) {
       console.error('Error generating response:', error);
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -177,9 +188,14 @@ const App = () => {
         onChangeText={setPrompt}
         value={prompt}
         placeholder="Enter your prompt about the image"
+        editable={!isGenerating}
       />
       
-      <Button title="Select Image" onPress={selectImage} />
+      <Button 
+        title="Select Image" 
+        onPress={selectImage}
+        disabled={isGenerating}
+      />
       
       {selectedImage && (
         <View style={{ marginVertical: 10 }}>
@@ -188,14 +204,18 @@ const App = () => {
             style={{ width: 200, height: 200 }}
             resizeMode="contain"
           />
-          <Button title="Clear Image" onPress={() => setSelectedImage(null)} />
+          <Button 
+            title="Clear Image" 
+            onPress={() => setSelectedImage(null)}
+            disabled={isGenerating}
+          />
         </View>
       )}
       
       <Button 
-        title="Analyze Image" 
+        title={isGenerating ? "Analyzing..." : "Analyze Image"}
         onPress={handleGenerateWithImage}
-        disabled={!selectedImage}
+        disabled={!selectedImage || isGenerating}
       />
       
       {partialResponse && (
@@ -214,9 +234,60 @@ The `useLlmInference` hook accepts the following configuration options:
 
 ```tsx
 const llmInference = useLlmInference({
-  storageType: 'asset', // Where the model files are stored
-  modelName: 'your-model-name.bin', // Name of your model file
-  enableVisionModality: true, // Enable image processing capabilities (optional)
+  storageType: 'asset', // 'asset' or 'file' - where the model files are stored
+  modelName: 'your-model-name.bin', // Name of your model file (for asset storage)
+  // or
+  modelPath: '/path/to/model.bin', // Full path to model file (for file storage)
+  
+  // Optional parameters with defaults:
+  maxTokens: 512, // Maximum tokens to generate
+  topK: 40, // Top-k sampling parameter
+  temperature: 0.8, // Temperature for response randomness
+  randomSeed: 0, // Random seed for reproducible results
+  enableVisionModality: false, // Enable image processing capabilities
+});
+```
+
+### Best Practices
+
+#### State Management
+Always track the generation state to prevent concurrent requests:
+
+```tsx
+const [isGenerating, setIsGenerating] = useState(false);
+
+const handleGenerate = async () => {
+  if (isGenerating) return;
+  
+  setIsGenerating(true);
+  try {
+    // ... generation logic
+  } finally {
+    setIsGenerating(false);
+  }
+};
+```
+
+#### Error Handling
+Implement proper error handling for both promise rejections and callback errors:
+
+```tsx
+const response = await llmInference.generateResponse(
+  prompt,
+  (partial) => {
+    setPartialResponse(partial);
+  },
+  (error) => {
+    // Handle streaming errors
+    console.error('Streaming error:', error);
+    setErrorMessage(error);
+    setIsGenerating(false);
+  }
+).catch((error) => {
+  // Handle promise rejection errors
+  console.error('Generation error:', error);
+  setErrorMessage(error.message);
+  setIsGenerating(false);
 });
 ```
 
@@ -227,8 +298,8 @@ const llmInference = useLlmInference({
 Generates a text response from a text prompt.
 
 - `prompt` (string): The input text prompt
-- `onPartial` (function, optional): Callback for streaming partial responses
-- `onError` (function, optional): Error handling callback
+- `onPartial` (function, optional): `(partial: string, requestId?: number) => void` - Callback for streaming partial responses. The `partial` parameter contains the accumulated response text.
+- `onError` (function, optional): `(error: string, requestId?: number) => void` - Error handling callback
 - Returns: Promise<string> - The complete response
 
 #### `generateResponseWithImage(prompt, imageBase64, onPartial?, onError?)`
@@ -237,9 +308,39 @@ Generates a response from both text and image input (requires vision-enabled mod
 
 - `prompt` (string): The input text prompt about the image
 - `imageBase64` (string): Base64-encoded image data
-- `onPartial` (function, optional): Callback for streaming partial responses  
-- `onError` (function, optional): Error handling callback
+- `onPartial` (function, optional): `(partial: string, requestId?: number) => void` - Callback for streaming partial responses. The `partial` parameter contains the accumulated response text.
+- `onError` (function, optional): `(error: string, requestId?: number) => void` - Error handling callback
 - Returns: Promise<string> - The complete response
+
+#### `isLoaded`
+
+A boolean property that indicates whether the model has been successfully loaded and is ready for inference.
+
+```tsx
+const llmInference = useLlmInference(config);
+
+if (llmInference.isLoaded) {
+  // Model is ready for inference
+}
+```
+
+## Important Notes
+
+### Streaming Behavior
+The streaming callbacks receive the **accumulated** response text, not individual chunks. This means:
+- Each `onPartial` call contains the complete response generated so far
+- You should replace (not append) the displayed text with each partial update
+- The final promise resolution will contain the same complete text as the last partial update
+
+### Image Processing
+Images are automatically processed before being sent to the model:
+- Images are downsampled to ensure the smaller dimension equals 256 pixels
+- Images are then center-cropped to 256x256 pixels
+- Images smaller than 256x256 are left unchanged
+- This processing optimizes inference performance while maintaining image quality
+
+### Concurrent Requests
+The native implementation prevents concurrent requests per model instance. Always track generation state in your UI to prevent multiple simultaneous requests.
 
 ## Example Use Cases
 
