@@ -9,7 +9,7 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
-import com.google.mediapipe.tasks.core.GraphOptions
+import com.google.mediapipe.tasks.genai.llminference.GraphOptions
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -41,9 +41,21 @@ class LlmInferenceModel(
         val optionsBuilder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(modelPath)
                 .setMaxTokens(maxTokens)
-                .setTopK(topK)
-                .setTemperature(temperature)
-                .setRandomSeed(randomSeed)
+                .setResultListener { partialResult, done ->
+                    inferenceListener?.onResults(this, requestId, partialResult)
+                    requestResult += partialResult
+                    if (done) {
+                        requestPromise?.resolve(requestResult)
+                        currentSession?.close()
+                        currentSession = null
+                    }
+                }
+                .setErrorListener { ex ->
+                    inferenceListener?.onError(this, requestId, ex.message ?: "")
+                    requestPromise?.reject("INFERENCE_ERROR", ex.message ?: "Unknown error")
+                    currentSession?.close()
+                    currentSession = null
+                }
 
         if (enableVisionModality) {
             optionsBuilder.setMaxNumImages(1)
@@ -67,7 +79,7 @@ class LlmInferenceModel(
             // Close previous session if exists
             currentSession?.close()
 
-            // Create session options
+            // Create session options - topK and temperature go here
             val sessionOptionsBuilder = LlmInferenceSession.LlmInferenceSessionOptions.builder()
                     .setTopK(topK)
                     .setTemperature(temperature)
@@ -82,24 +94,6 @@ class LlmInferenceModel(
 
             // Create new session
             currentSession = LlmInferenceSession.createFromOptions(llmInference, sessionOptions)
-
-            // Set up result listener for the session
-            currentSession?.setResultListener { partialResult, done ->
-                inferenceListener?.onResults(this, requestId, partialResult)
-                requestResult += partialResult
-                if (done) {
-                    requestPromise?.resolve(requestResult)
-                    currentSession?.close()
-                    currentSession = null
-                }
-            }
-
-            currentSession?.setErrorListener { ex ->
-                inferenceListener?.onError(this, requestId, ex.message ?: "")
-                requestPromise?.reject("INFERENCE_ERROR", ex.message ?: "Unknown error")
-                currentSession?.close()
-                currentSession = null
-            }
 
             // Add text prompt
             currentSession?.addQueryChunk(prompt)
