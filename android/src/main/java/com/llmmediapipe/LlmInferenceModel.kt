@@ -91,7 +91,7 @@ class LlmInferenceModel(
             }
 
             // Create progress listener for partial results
-            val progressListener = ProgressListener<String> { partialResult ->
+            val progressListener = ProgressListener<String> { partialResult, done ->
                 // Accumulate the partial result
                 requestResult += partialResult
                 // Send the accumulated result to the listener
