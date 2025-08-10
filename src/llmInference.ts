@@ -81,6 +81,7 @@ function getConfigStorageKey(config: LlmInferenceConfig): string {
 
 export function useLlmInference(config: LlmInferenceConfig) {
   const [modelHandle, setModelHandle] = React.useState<number | undefined>();
+  const [modelPromise, setModelPromise] = React.useState<Promise<number> | null>(null);
   const configStorageKey = getConfigStorageKey(config);
   
   React.useEffect(() => {
@@ -111,6 +112,8 @@ export function useLlmInference(config: LlmInferenceConfig) {
             config.randomSeed ?? 0,
             config.enableVisionModality ?? false
           );
+
+    setModelPromise(modelCreatePromise); // Expose the promise
 
     modelCreatePromise
       .then((handle) => {
@@ -267,8 +270,9 @@ export function useLlmInference(config: LlmInferenceConfig) {
     () => ({ 
       generateResponse, 
       generateResponseWithImage,
-      isLoaded: modelHandle !== undefined 
+      isLoaded: modelHandle !== undefined,
+      modelPromise
     }),
-    [generateResponse, generateResponseWithImage, modelHandle]
+    [generateResponse, generateResponseWithImage, modelHandle, modelPromise]
   );
 }
