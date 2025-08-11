@@ -25,6 +25,7 @@ class LlmInferenceModel(
         val temperature: Float,
         val randomSeed: Int,
         val enableVisionModality: Boolean = false,
+        val preferGpuBackend: Boolean = false, // New parameter for GPU backend
         val inferenceListener: InferenceListener? = null,
 ) {
     private var llmInference: LlmInference
@@ -46,6 +47,17 @@ class LlmInferenceModel(
 
         if (enableVisionModality) {
             optionsBuilder.setMaxNumImages(1)
+        }
+
+        // Add GPU backend preference if requested
+        if (preferGpuBackend) {
+            try {
+                optionsBuilder.setPreferredBackend(LlmInference.Backend.GPU)
+                inferenceListener?.logging(this, "GPU backend requested")
+            } catch (e: Exception) {
+                inferenceListener?.logging(this, "GPU backend not available, falling back to CPU: ${e.message}")
+                // GPU backend will fall back to CPU automatically if not available
+            }
         }
 
         val options = optionsBuilder.build()

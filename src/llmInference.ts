@@ -12,7 +12,8 @@ interface LlmInference {
     topK: number,
     temperature: number,
     randomSeed: number,
-    enableVisionModality: boolean
+    enableVisionModality: boolean,
+    preferGpuBackend: boolean
   ) => Promise<number>;
   createModelFromAsset: (
     modelName: string,
@@ -20,7 +21,8 @@ interface LlmInference {
     topK: number,
     temperature: number,
     randomSeed: number,
-    enableVisionModality: boolean
+    enableVisionModality: boolean,
+    preferGpuBackend: boolean
   ) => Promise<number>;
   releaseModel: (handle: number) => Promise<boolean>;
   generateResponse: (
@@ -70,6 +72,7 @@ export type LlmInferenceConfig = LlmModelLocation & {
   temperature?: number;
   randomSeed?: number;
   enableVisionModality?: boolean;
+  preferGpuBackend?: boolean; // New option for GPU backend
 };
 
 function getConfigStorageKey(config: LlmInferenceConfig): string {
@@ -102,7 +105,8 @@ export function useLlmInference(config: LlmInferenceConfig) {
             config.topK ?? 40,
             config.temperature ?? 0.8,
             config.randomSeed ?? 0,
-            config.enableVisionModality ?? false
+            config.enableVisionModality ?? false,
+            config.preferGpuBackend ?? false // Default to CPU backend
           )
         : getLlmInference().createModel(
             configStorageKey,
@@ -110,14 +114,15 @@ export function useLlmInference(config: LlmInferenceConfig) {
             config.topK ?? 40,
             config.temperature ?? 0.8,
             config.randomSeed ?? 0,
-            config.enableVisionModality ?? false
+            config.enableVisionModality ?? false,
+            config.preferGpuBackend ?? false // Default to CPU backend
           );
 
     setModelPromise(modelCreatePromise); // Expose the promise
 
     modelCreatePromise
       .then((handle) => {
-        console.log(`Created model with handle ${handle}`);
+        console.log(`Created model with handle ${handle} (GPU: ${config.preferGpuBackend ?? false})`);
         setModelHandle(handle);
         newHandle = handle;
       })
@@ -144,6 +149,7 @@ export function useLlmInference(config: LlmInferenceConfig) {
     config.temperature,
     config.topK,
     config.enableVisionModality,
+    config.preferGpuBackend, // Add to dependency array
     configStorageKey,
   ]);
 

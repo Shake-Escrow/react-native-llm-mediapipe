@@ -66,6 +66,7 @@ class LlmInferenceModule(private val reactContext: ReactApplicationContext) :
     temperature: Double,
     randomSeed: Int,
     enableVisionModality: Boolean,
+    preferGpuBackend: Boolean, // New parameter
     promise: Promise
   ) {
     try {
@@ -79,6 +80,7 @@ class LlmInferenceModule(private val reactContext: ReactApplicationContext) :
           temperature.toFloat(),
           randomSeed,
           enableVisionModality,
+          preferGpuBackend, // Pass the new parameter
           inferenceListener = InferenceModelListener(this, modelHandle)
         )
       modelMap[modelHandle] = model
@@ -96,6 +98,7 @@ class LlmInferenceModule(private val reactContext: ReactApplicationContext) :
     temperature: Double,
     randomSeed: Int,
     enableVisionModality: Boolean,
+    preferGpuBackend: Boolean, // New parameter
     promise: Promise
   ) {
     try {
@@ -111,6 +114,7 @@ class LlmInferenceModule(private val reactContext: ReactApplicationContext) :
           temperature.toFloat(),
           randomSeed,
           enableVisionModality,
+          preferGpuBackend, // Pass the new parameter
           inferenceListener = InferenceModelListener(this, modelHandle)
         )
       modelMap[modelHandle] = model
