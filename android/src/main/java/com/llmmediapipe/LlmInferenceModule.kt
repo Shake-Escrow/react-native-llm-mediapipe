@@ -1,5 +1,6 @@
 package com.llmmediapipe
 
+import android.app.ActivityManager
 import android.content.Context
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
@@ -143,6 +144,44 @@ class LlmInferenceModule(private val reactContext: ReactApplicationContext) :
   fun generateResponseWithImage(handle: Int, requestId: Int, prompt: String, imageBase64: String?, promise: Promise) {
     modelMap[handle]?.let { it.generateResponseWithImageAsync(requestId, prompt, imageBase64, promise) }
       ?: promise.reject("INVALID_HANDLE", "No model found for handle $handle")
+  }
+
+  @ReactMethod
+  fun getMemoryStats(promise: Promise) {
+    try {
+      val activityManager = reactContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+      val memoryInfo = ActivityManager.MemoryInfo()
+      activityManager.getMemoryInfo(memoryInfo)
+
+      // System memory stats
+      val totalSysRamMB = (memoryInfo.totalMem / (1024 * 1024)).toInt()
+      val availSysRamMB = (memoryInfo.availMem / (1024 * 1024)).toInt()
+      val lowMemory = memoryInfo.lowMemory
+
+      // Runtime (heap) memory stats
+      val runtime = Runtime.getRuntime()
+      val maxHeapBytes = runtime.maxMemory()
+      val totalHeapBytes = runtime.totalMemory()
+      val freeHeapBytes = runtime.freeMemory()
+      val usedHeapBytes = totalHeapBytes - freeHeapBytes
+
+      val heapMaxMB = (maxHeapBytes / (1024 * 1024)).toInt()
+      val heapAllocatedMB = (usedHeapBytes / (1024 * 1024)).toInt()
+      val heapFreeMB = ((maxHeapBytes - usedHeapBytes) / (1024 * 1024)).toInt()
+
+      val stats = Arguments.createMap().apply {
+        putInt("availSysRamMB", availSysRamMB)
+        putInt("totalSysRamMB", totalSysRamMB)
+        putInt("heapMaxMB", heapMaxMB)
+        putInt("heapAllocatedMB", heapAllocatedMB)
+        putInt("heapFreeMB", heapFreeMB)
+        putBoolean("lowMemory", lowMemory)
+      }
+
+      promise.resolve(stats)
+    } catch (e: Exception) {
+      promise.reject("MEMORY_STATS_ERROR", "Failed to get memory stats: ${e.localizedMessage}")
+    }
   }
 
   @ReactMethod

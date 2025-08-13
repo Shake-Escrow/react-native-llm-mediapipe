@@ -5,6 +5,15 @@ const { LlmInferenceModule } = NativeModules;
 
 const eventEmitter = new NativeEventEmitter(LlmInferenceModule);
 
+export interface MemoryStats {
+  availSysRamMB: number;
+  totalSysRamMB: number;
+  heapMaxMB: number;
+  heapAllocatedMB: number;
+  heapFreeMB: number;
+  lowMemory: boolean;
+}
+
 interface LlmInference {
   createModel: (
     modelPath: string,
@@ -36,6 +45,7 @@ interface LlmInference {
     prompt: string,
     imageBase64: string | null
   ) => Promise<string>;
+  getMemoryStats: () => Promise<MemoryStats>;
 }
 
 function getLlmInference(): LlmInference {
@@ -272,13 +282,18 @@ export function useLlmInference(config: LlmInferenceConfig) {
     [modelHandle]
   );
 
+  const getMemoryStats = React.useCallback(async (): Promise<MemoryStats> => {
+    return getLlmInference().getMemoryStats();
+  }, []);
+
   return React.useMemo(
     () => ({ 
       generateResponse, 
       generateResponseWithImage,
+      getMemoryStats,
       isLoaded: modelHandle !== undefined,
       modelPromise
     }),
-    [generateResponse, generateResponseWithImage, modelHandle, modelPromise]
+    [generateResponse, generateResponseWithImage, getMemoryStats, modelHandle, modelPromise]
   );
 }
