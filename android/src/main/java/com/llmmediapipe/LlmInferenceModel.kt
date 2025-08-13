@@ -25,7 +25,7 @@ class LlmInferenceModel(
         val temperature: Float,
         val randomSeed: Int,
         val enableVisionModality: Boolean = false,
-        val preferGpuBackend: Boolean = false, // New parameter for GPU backend
+        val preferGpuBackend: Boolean = false,
         val inferenceListener: InferenceListener? = null,
 ) {
     private var llmInference: LlmInference
@@ -43,25 +43,38 @@ class LlmInferenceModel(
         val optionsBuilder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(modelPath)
                 .setMaxTokens(maxTokens)
-                .setMaxTopK(topK) // Set maxTopK instead of using it in session
+                .setMaxTopK(topK)
 
         if (enableVisionModality) {
             optionsBuilder.setMaxNumImages(1)
+            inferenceListener?.logging(this, "Vision modality enabled with CPU backend")
         }
 
-        // Add GPU backend preference if requested
-        if (preferGpuBackend) {
+        // Explicitly set CPU backend regardless of preferGpuBackend when vision is enabled
+        if (enableVisionModality) {
+            try {
+                optionsBuilder.setPreferredBackend(LlmInference.Backend.CPU)
+                inferenceListener?.logging(this, "Explicitly set CPU backend for vision modality")
+            } catch (e: Exception) {
+                inferenceListener?.logging(this, "Error setting CPU backend: ${e.message}")
+            }
+        } else if (preferGpuBackend) {
             try {
                 optionsBuilder.setPreferredBackend(LlmInference.Backend.GPU)
-                inferenceListener?.logging(this, "GPU backend requested")
+                inferenceListener?.logging(this, "GPU backend requested for text-only model")
             } catch (e: Exception) {
                 inferenceListener?.logging(this, "GPU backend not available, falling back to CPU: ${e.message}")
-                // GPU backend will fall back to CPU automatically if not available
             }
         }
 
-        val options = optionsBuilder.build()
-        llmInference = LlmInference.createFromOptions(context, options)
+        try {
+            val options = optionsBuilder.build()
+            llmInference = LlmInference.createFromOptions(context, options)
+            inferenceListener?.logging(this, "LlmInference created successfully")
+        } catch (e: Exception) {
+            inferenceListener?.logging(this, "Failed to create LlmInference: ${e.message}")
+            throw e
+        }
     }
 
     fun generateResponseAsync(requestId: Int, prompt: String, promise: Promise) {
@@ -77,37 +90,62 @@ class LlmInferenceModel(
             // Close previous session if exists
             currentSession?.close()
 
-            // Create session options - topK and temperature go here
+            // Create session options with more conservative settings for vision
             val sessionOptionsBuilder = LlmInferenceSession.LlmInferenceSessionOptions.builder()
                     .setTopK(topK)
                     .setTemperature(temperature)
 
             if (enableVisionModality) {
-                sessionOptionsBuilder.setGraphOptions(
-                    GraphOptions.builder().setEnableVisionModality(true).build()
-                )
+                // Use minimal graph options for vision to avoid delegate conflicts
+                val graphOptionsBuilder = GraphOptions.builder()
+                        .setEnableVisionModality(true)
+                
+                try {
+                    sessionOptionsBuilder.setGraphOptions(graphOptionsBuilder.build())
+                    inferenceListener?.logging(this, "Creating vision session with minimal options")
+                } catch (e: Exception) {
+                    inferenceListener?.logging(this, "Error setting graph options: ${e.message}")
+                    // Try without explicit graph options as fallback
+                    inferenceListener?.logging(this, "Attempting session creation without explicit graph options")
+                }
             }
 
             val sessionOptions = sessionOptionsBuilder.build()
 
-            // Create new session
-            currentSession = LlmInferenceSession.createFromOptions(llmInference, sessionOptions)
+            // Create new session with error handling
+            try {
+                currentSession = LlmInferenceSession.createFromOptions(llmInference, sessionOptions)
+                inferenceListener?.logging(this, "Session created successfully")
+            } catch (e: Exception) {
+                inferenceListener?.logging(this, "Failed to create session: ${e.message}")
+                throw Exception("Failed to initialize session: ${e.message}")
+            }
 
             // Add text prompt
             currentSession?.addQueryChunk(prompt)
 
-            // Add image if provided
+            // Add image if provided with better error handling
             if (imageBase64 != null && enableVisionModality) {
-                val image = base64ToMPImage(imageBase64)
-                currentSession?.addImage(image)
+                try {
+                    val image = base64ToMPImage(imageBase64)
+                    currentSession?.addImage(image)
+                    inferenceListener?.logging(this, "Image added to session successfully")
+                } catch (e: Exception) {
+                    inferenceListener?.logging(this, "Failed to add image: ${e.message}")
+                    throw Exception("Failed to process image: ${e.message}")
+                }
             }
 
             // Create progress listener for partial results
             val progressListener = ProgressListener<String> { partialResult, done ->
-                // Accumulate the partial result
-                requestResult += partialResult
-                // Send the accumulated result to the listener
-                inferenceListener?.onResults(this, requestId, requestResult)
+                try {
+                    // Accumulate the partial result
+                    requestResult += partialResult
+                    // Send the accumulated result to the listener
+                    inferenceListener?.onResults(this, requestId, requestResult)
+                } catch (e: Exception) {
+                    inferenceListener?.logging(this, "Error in progress listener: ${e.message}")
+                }
             }
 
             // Generate response with progress listener
@@ -125,46 +163,56 @@ class LlmInferenceModel(
                         currentSession?.close()
                         currentSession = null
                     } catch (e: Exception) {
-                        inferenceListener?.onError(this, requestId, e.message ?: "")
-                        requestPromise?.reject("INFERENCE_ERROR", e.message ?: "Unknown error")
+                        val errorMessage = "Inference failed: ${e.message}"
+                        inferenceListener?.logging(this, errorMessage)
+                        inferenceListener?.onError(this, requestId, errorMessage)
+                        requestPromise?.reject("INFERENCE_ERROR", errorMessage)
                         currentSession?.close()
                         currentSession = null
                     }
                 }.start()
             } ?: run {
-                // If session is null, reject immediately
-                inferenceListener?.onError(this, requestId, "Failed to create session")
-                requestPromise?.reject("INFERENCE_ERROR", "Failed to create session")
+                val errorMessage = "Failed to create inference future"
+                inferenceListener?.onError(this, requestId, errorMessage)
+                requestPromise?.reject("INFERENCE_ERROR", errorMessage)
             }
 
         } catch (e: Exception) {
-            inferenceListener?.onError(this, requestId, e.message ?: "")
-            requestPromise?.reject("INFERENCE_ERROR", e.message ?: "Unknown error")
+            val errorMessage = "Setup failed: ${e.message}"
+            inferenceListener?.logging(this, errorMessage)
+            inferenceListener?.onError(this, requestId, errorMessage)
+            requestPromise?.reject("INFERENCE_ERROR", errorMessage)
             currentSession?.close()
             currentSession = null
         }
     }
 
     private fun base64ToMPImage(base64String: String): MPImage {
-        // Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
-        val base64Data = if (base64String.contains(",")) {
-            base64String.split(",")[1]
-        } else {
-            base64String
+        try {
+            // Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
+            val base64Data = if (base64String.contains(",")) {
+                base64String.split(",")[1]
+            } else {
+                base64String
+            }
+
+            // Decode base64 to byte array
+            val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
+            
+            // Convert to Bitmap
+            val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                ?: throw IllegalArgumentException("Failed to decode image from base64")
+
+            inferenceListener?.logging(this, "Original image: ${bitmap.width}x${bitmap.height}")
+
+            // Process the image: downsample and crop to 256x256
+            val processedBitmap = processImage(bitmap)
+
+            // Convert processed Bitmap to MPImage
+            return BitmapImageBuilder(processedBitmap).build()
+        } catch (e: Exception) {
+            throw Exception("Image processing failed: ${e.message}")
         }
-
-        // Decode base64 to byte array
-        val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
-        
-        // Convert to Bitmap
-        val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-            ?: throw IllegalArgumentException("Failed to decode image from base64")
-
-        // Process the image: downsample and crop to 256x256
-        val processedBitmap = processImage(bitmap)
-
-        // Convert processed Bitmap to MPImage
-        return BitmapImageBuilder(processedBitmap).build()
     }
 
     private fun processImage(originalBitmap: Bitmap): Bitmap {
@@ -178,36 +226,44 @@ class LlmInferenceModel(
             return originalBitmap
         }
 
-        // Step 1: Downsample the image
-        // Calculate the scale factor to make the smaller dimension equal to targetSize
-        val scaleFactor = targetSize.toFloat() / min(originalWidth, originalHeight)
-        val scaledWidth = (originalWidth * scaleFactor).toInt()
-        val scaledHeight = (originalHeight * scaleFactor).toInt()
+        try {
+            // Step 1: Downsample the image
+            // Calculate the scale factor to make the smaller dimension equal to targetSize
+            val scaleFactor = targetSize.toFloat() / min(originalWidth, originalHeight)
+            val scaledWidth = (originalWidth * scaleFactor).toInt()
+            val scaledHeight = (originalHeight * scaleFactor).toInt()
 
-        val scaledBitmap = Bitmap.createScaledBitmap(originalBitmap, scaledWidth, scaledHeight, true)
-        
-        inferenceListener?.logging(this, "Downsampled image from ${originalWidth}x${originalHeight} to ${scaledWidth}x${scaledHeight}")
+            val scaledBitmap = Bitmap.createScaledBitmap(originalBitmap, scaledWidth, scaledHeight, true)
+            
+            inferenceListener?.logging(this, "Downsampled image from ${originalWidth}x${originalHeight} to ${scaledWidth}x${scaledHeight}")
 
-        // Step 2: Crop to 256x256 from the center
-        val cropX = (scaledWidth - targetSize) / 2
-        val cropY = (scaledHeight - targetSize) / 2
+            // Step 2: Crop to 256x256 from the center
+            val cropX = (scaledWidth - targetSize) / 2
+            val cropY = (scaledHeight - targetSize) / 2
 
-        val croppedBitmap = Bitmap.createBitmap(scaledBitmap, cropX, cropY, targetSize, targetSize)
-        
-        inferenceListener?.logging(this, "Cropped image to ${targetSize}x${targetSize} from center")
+            val croppedBitmap = Bitmap.createBitmap(scaledBitmap, cropX, cropY, targetSize, targetSize)
+            
+            inferenceListener?.logging(this, "Cropped image to ${targetSize}x${targetSize} from center")
 
-        // Clean up intermediate bitmap
-        if (scaledBitmap != originalBitmap && scaledBitmap != croppedBitmap) {
-            scaledBitmap.recycle()
+            // Clean up intermediate bitmap
+            if (scaledBitmap != originalBitmap && scaledBitmap != croppedBitmap) {
+                scaledBitmap.recycle()
+            }
+
+            return croppedBitmap
+        } catch (e: Exception) {
+            throw Exception("Image processing failed: ${e.message}")
         }
-
-        return croppedBitmap
     }
 
     fun close() {
-        currentSession?.close()
-        currentSession = null
-        llmInference.close()
+        try {
+            currentSession?.close()
+            currentSession = null
+            llmInference.close()
+        } catch (e: Exception) {
+            inferenceListener?.logging(this, "Error closing model: ${e.message}")
+        }
     }
 }
 
