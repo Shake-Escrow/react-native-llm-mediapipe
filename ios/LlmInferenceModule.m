@@ -17,6 +17,8 @@ RCT_EXTERN_METHOD(createModel:(nonnull NSString*)modelPath
                   withTopK:(NSInteger)topK
                   withTemperature:(nonnull NSNumber*)temperature
                   withRandomSeed:(NSInteger)randomSeed
+                  withEnableVisionModality:(BOOL)enableVisionModality
+                  withPreferGpuBackend:(BOOL)preferGpuBackend
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -25,6 +27,8 @@ RCT_EXTERN_METHOD(createModelFromAsset:(nonnull NSString*)modelName
                   withTopK:(NSInteger)topK
                   withTemperature:(nonnull NSNumber*)temperature
                   withRandomSeed:(NSInteger)randomSeed
+                  withEnableVisionModality:(BOOL)enableVisionModality
+                  withPreferGpuBackend:(BOOL)preferGpuBackend
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -37,4 +41,15 @@ RCT_EXTERN_METHOD(generateResponse:(NSInteger)handle
                   withPrompt:(nonnull NSString*)prompt
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(generateResponseWithImage:(NSInteger)handle
+                  withRequestId:(NSInteger)requestId
+                  withPrompt:(nonnull NSString*)prompt
+                  withImageBase64:(NSString*)imageBase64
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(getMemoryStats:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end
