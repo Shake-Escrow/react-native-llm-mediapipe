@@ -15,8 +15,17 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/cdiddy77/react-native-llm-mediapipe.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm,swift}"
+  
+  # Swift language version
+  s.swift_version = '5.9'
 
-  s.dependency 'MediaPipeTasksGenAI'
+  # iOS uses MLX Swift for on-device inference
+  # MLX Swift packages from ml-explore
+  s.dependency 'MLX', '~> 0.15.0'
+  s.dependency 'MLXRandom', '~> 0.15.0'
+  s.dependency 'MLXLM', '~> 0.15.0'  # Language model utilities
+  
+  # Note: Android uses MediaPipe (configured in build.gradle)
 
   # Use install_modules_dependencies helper to install the dependencies if React Native version >=0.71.0.
   # See https://github.com/facebook/react-native/blob/febf6b7f33fdb4904669f99d795eba4c0f95d7bf/scripts/cocoapods/new_architecture.rb#L79.
