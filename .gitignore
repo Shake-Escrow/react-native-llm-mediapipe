@@ -9,6 +9,12 @@
 .vscode/
 jsconfig.json
 
+# Swift Package Manager
+.build/
+ios/.build/
+*.o
+*.d
+
 # Xcode
 #
 build/
