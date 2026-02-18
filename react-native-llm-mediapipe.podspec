@@ -21,9 +21,18 @@ Pod::Spec.new do |s|
 
   # MLX Swift dependencies via Swift Package Manager.
   # spm_dependency is available since React Native 0.75 (react_native_pods.rb).
-  # NOTE: If you see linker errors at build time, try adding USE_FRAMEWORKS=dynamic
-  # when running `npx expo run:ios` (e.g. USE_FRAMEWORKS=dynamic npx expo run:ios).
-  # This is a known CocoaPods limitation when mixing static pods with SPM packages.
+  #
+  # SWIFT_ENABLE_EXPLICIT_MODULES = NO is required on the app target when SPM packages
+  # are present in the workspace alongside static CocoaPods. Without it, Xcode 16+
+  # fails with "Unable to find module dependency: '_DarwinFoundation3'" because the
+  # explicit module scanner encounters an internal Foundation overlay that isn't
+  # available in the module search path for the bridging-header scan.
+  # The Pods project already has this set in the post_install hook; this xcconfig
+  # entry extends it to the app target so it survives expo prebuild --clean.
+  s.user_target_xcconfig = {
+    'SWIFT_ENABLE_EXPLICIT_MODULES' => 'NO'
+  }
+
   spm_dependency(s,
     url: 'https://github.com/ml-explore/mlx-swift',
     requirement: { kind: 'upToNextMajorVersion', minimumVersion: '0.21.0' },
