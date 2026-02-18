@@ -19,14 +19,25 @@ Pod::Spec.new do |s|
   # Swift language version
   s.swift_version = '5.9'
 
-  # Disable explicit Swift module compilation for this pod only.
-  # Xcode 16+ fails with "Unable to find module dependency: '_DarwinFoundation3'"
-  # when SPM packages (MLX) are included alongside static CocoaPods and the explicit
-  # module scanner encounters the internal Foundation cross-import overlay.
-  # Scoping this to pod_target_xcconfig avoids interfering with the app target's
-  # module resolution (which Expo requires to be enabled for `import Expo` to work).
+  # Fix for Xcode 16+ "Unable to find module dependency: '_DarwinFoundation3'".
+  #
+  # The iPhoneOS SDK ships _DarwinFoundation3.swiftmodule with ONLY an arm64e
+  # interface. When MLX Swift packages (compiled for arm64) are in the workspace
+  # their compiled module interfaces list _DarwinFoundation3 as a transitive
+  # dependency. Xcode's explicit module scanner then fails to find an arm64 variant,
+  # producing 1275+ cascading errors that also break `import Expo`.
+  #
+  # The stub at ios/swift-module-stubs/_DarwinFoundation3.swiftmodule/
+  # arm64-apple-ios.swiftinterface satisfies the scanner for arm64 without
+  # disabling SWIFT_ENABLE_EXPLICIT_MODULES (which would break `import Expo`).
+  s.preserve_paths = 'ios/swift-module-stubs/**'
+
   s.pod_target_xcconfig = {
-    'SWIFT_ENABLE_EXPLICIT_MODULES' => 'NO'
+    'SWIFT_INCLUDE_PATHS' => '$(inherited) $(PODS_TARGET_SRCROOT)/ios/swift-module-stubs'
+  }
+
+  s.user_target_xcconfig = {
+    'SWIFT_INCLUDE_PATHS' => '$(inherited) $(SRCROOT)/../node_modules/react-native-llm-mediapipe/ios/swift-module-stubs'
   }
 
   # MLX Swift dependencies via Swift Package Manager.
