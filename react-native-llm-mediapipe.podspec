@@ -21,7 +21,9 @@ Pod::Spec.new do |s|
 
   # MLX Swift dependencies via Swift Package Manager.
   # spm_dependency is available since React Native 0.75 (react_native_pods.rb).
-  # SPM integration requires `use_frameworks! :linkage => :dynamic` in the consumer's Podfile.
+  # NOTE: If you see linker errors at build time, try adding USE_FRAMEWORKS=dynamic
+  # when running `npx expo run:ios` (e.g. USE_FRAMEWORKS=dynamic npx expo run:ios).
+  # This is a known CocoaPods limitation when mixing static pods with SPM packages.
   spm_dependency(s,
     url: 'https://github.com/ml-explore/mlx-swift',
     requirement: { kind: 'upToNextMajorVersion', minimumVersion: '0.21.0' },
