@@ -35,7 +35,8 @@ class LlmInferenceModule: RCTEventEmitter {
         topK: topK,
         temperature: temperature.floatValue,
         randomSeed: randomSeed,
-        enableVisionModality: enableVisionModality
+        enableVisionModality: enableVisionModality,
+        preferGpuBackend: preferGpuBackend
       )
       model.delegate = self
       modelMap[handle] = model

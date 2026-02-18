@@ -15,16 +15,24 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/Shake-Escrow/react-native-llm-mediapipe.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm,swift}"
-  
+
   # Swift language version
   s.swift_version = '5.9'
 
-  # iOS uses MLX Swift for on-device inference
-  # MLX Swift packages are distributed via Swift Package Manager
-  # These will be automatically resolved when using use_frameworks!
-  s.pod_target_xcconfig = {
-    'SWIFT_INCLUDE_PATHS' => '$(inherited) ${PODS_ROOT}/../../node_modules/react-native-llm-mediapipe/ios'
-  }
+  # MLX Swift dependencies via Swift Package Manager.
+  # spm_dependency is available since React Native 0.75 (react_native_pods.rb).
+  # SPM integration requires `use_frameworks! :linkage => :dynamic` in the consumer's Podfile.
+  spm_dependency(s,
+    url: 'https://github.com/ml-explore/mlx-swift',
+    requirement: { kind: 'upToNextMajorVersion', minimumVersion: '0.21.0' },
+    products: ['MLX', 'MLXRandom']
+  )
+
+  spm_dependency(s,
+    url: 'https://github.com/ml-explore/mlx-swift-examples',
+    requirement: { kind: 'upToNextMajorVersion', minimumVersion: '2.21.0' },
+    products: ['MLXLM']
+  )
 
   # Note: Android uses MediaPipe (configured in build.gradle)
 
@@ -49,5 +57,5 @@ Pod::Spec.new do |s|
       s.dependency "RCTTypeSafety"
       s.dependency "ReactCommon/turbomodule/core"
     end
-  end    
+  end
 end
