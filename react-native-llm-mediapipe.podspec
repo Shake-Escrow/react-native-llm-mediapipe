@@ -24,20 +24,23 @@ Pod::Spec.new do |s|
   # The iPhoneOS SDK ships _DarwinFoundation3.swiftmodule with ONLY an arm64e
   # interface. When MLX Swift packages (compiled for arm64) are in the workspace
   # their compiled module interfaces list _DarwinFoundation3 as a transitive
-  # dependency. Xcode's explicit module scanner then fails to find an arm64 variant,
-  # producing 1275+ cascading errors that also break `import Expo`.
+  # dependency. Xcode's explicit module scanner then fails to find an arm64 variant.
   #
-  # The stub at ios/swift-module-stubs/_DarwinFoundation3.swiftmodule/
-  # arm64-apple-ios.swiftinterface satisfies the scanner for arm64 without
-  # disabling SWIFT_ENABLE_EXPLICIT_MODULES (which would break `import Expo`).
+  # The stubs in ios/swift-module-stubs/ satisfy the scanner for arm64.
+  # They are only needed by the pod's own compilation (pod_target_xcconfig).
+  #
+  # user_target_xcconfig is intentionally omitted here.
+  # Adding SWIFT_INCLUDE_PATHS to the user (app) target via user_target_xcconfig
+  # triggers Xcode 16's explicit-module pre-scanner on the app target, which
+  # looks up every module map referenced in CocoaPods' VFS overlay (including
+  # EXConstants, ExpoModulesCore, etc.) before those pods have been compiled,
+  # producing a "module map file not found" cascade of 1200+ errors.
+  # The app target must keep SWIFT_ENABLE_EXPLICIT_MODULES = YES so that
+  # `import Expo` resolves correctly (Expo SDK 53 + New Architecture).
   s.preserve_paths = 'ios/swift-module-stubs/**'
 
   s.pod_target_xcconfig = {
     'SWIFT_INCLUDE_PATHS' => '$(inherited) $(PODS_TARGET_SRCROOT)/ios/swift-module-stubs'
-  }
-
-  s.user_target_xcconfig = {
-    'SWIFT_INCLUDE_PATHS' => '$(inherited) $(SRCROOT)/../node_modules/react-native-llm-mediapipe/ios/swift-module-stubs'
   }
 
   # MLX Swift dependencies via Swift Package Manager.
