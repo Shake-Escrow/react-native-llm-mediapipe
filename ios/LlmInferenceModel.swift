@@ -13,7 +13,7 @@ final class LlmInferenceModel {
   weak var delegate: LlmInferenceModelDelegate?
 
   private var inference: LlmInference?
-  private var currentSession: LlmInferenceSession?
+  private var currentSession: LlmInference.Session?
 
   let handle: Int
   private let modelPath: String
@@ -49,11 +49,10 @@ final class LlmInferenceModel {
   private func initializeInference() throws {
     let llmOptions = LlmInference.Options(modelPath: self.modelPath)
     llmOptions.maxTokens = self.maxTokens
-    llmOptions.topk = self.topK
-    llmOptions.temperature = self.temperature
-    llmOptions.randomSeed = self.randomSeed
+    llmOptions.maxTopk = self.topK
 
     if enableVisionModality {
+      llmOptions.maxImages = 1
       llmOptions.supportedLoraRanks = []
       delegate?.logging(self, message: "Vision modality enabled with CPU backend")
     }
@@ -105,12 +104,14 @@ final class LlmInferenceModel {
     do {
       currentSession = nil
 
-      let sessionOptions = LlmInferenceSession.Options()
+      let sessionOptions = LlmInference.Session.Options()
       sessionOptions.topk = self.topK
       sessionOptions.temperature = self.temperature
+      sessionOptions.randomSeed = self.randomSeed
+      sessionOptions.enableVisionModality = self.enableVisionModality
 
       do {
-        currentSession = try LlmInferenceSession(llmInference: inference, options: sessionOptions)
+        currentSession = try LlmInference.Session(llmInference: inference, options: sessionOptions)
         delegate?.logging(self, message: "Session created successfully")
       } catch {
         delegate?.logging(self, message: "Failed to create session: \(error.localizedDescription)")
@@ -121,12 +122,12 @@ final class LlmInferenceModel {
         )
       }
 
-      currentSession?.addQueryChunk(prompt)
+      try currentSession?.addQueryChunk(inputText: prompt)
 
       if let imageBase64 = imageBase64, enableVisionModality {
         do {
           let image = try base64ToImage(imageBase64)
-          currentSession?.addImage(image)
+          try currentSession?.addImage(image: image)
           delegate?.logging(self, message: "Image added to session successfully")
         } catch {
           delegate?.logging(self, message: "Failed to add image: \(error.localizedDescription)")
@@ -166,7 +167,7 @@ final class LlmInferenceModel {
     }
   }
 
-  private func base64ToImage(_ base64String: String) throws -> UIImage {
+  private func base64ToImage(_ base64String: String) throws -> CGImage {
     let base64Data: String
     if base64String.contains(",") {
       let components = base64String.split(separator: ",", maxSplits: 1)
@@ -196,7 +197,17 @@ final class LlmInferenceModel {
       message: "Original image: \(Int(originalImage.size.width))x\(Int(originalImage.size.height))"
     )
 
-    return try processImage(originalImage)
+    let processedImage = try processImage(originalImage)
+
+    guard let cgImage = processedImage.cgImage else {
+      throw NSError(
+        domain: "IMAGE_PROCESSING_ERROR",
+        code: 0,
+        userInfo: [NSLocalizedDescriptionKey: "Failed to convert processed image to CGImage"]
+      )
+    }
+
+    return cgImage
   }
 
   private func processImage(_ originalImage: UIImage) throws -> UIImage {
