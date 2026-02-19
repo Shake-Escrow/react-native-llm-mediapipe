@@ -35,7 +35,8 @@ class LlmInferenceModule: RCTEventEmitter {
         topK: topK,
         temperature: temperature.floatValue,
         randomSeed: randomSeed,
-        enableVisionModality: enableVisionModality
+        enableVisionModality: enableVisionModality,
+        preferGpuBackend: preferGpuBackend
       )
       model.delegate = self
       modelMap[handle] = model
@@ -56,8 +57,13 @@ class LlmInferenceModule: RCTEventEmitter {
     resolve: @escaping RCTPromiseResolveBlock,
     reject: @escaping RCTPromiseRejectBlock
   ) {
-    guard let path = Bundle.main.path(forResource: modelName, ofType: nil) ?? 
-                Bundle.main.path(forResource: modelName, ofType: "mlpackage") else {
+    let fileURL = URL(fileURLWithPath: modelName)
+    let basename = fileURL.deletingPathExtension().lastPathComponent
+    let fileExtension = fileURL.pathExtension
+
+    guard let path = Bundle.main.path(forResource: basename, ofType: fileExtension) ??
+      Bundle.main.path(forResource: modelName, ofType: nil)
+    else {
       reject("ASSET_NOT_FOUND", "Model asset not found: \(modelName)", nil)
       return
     }
